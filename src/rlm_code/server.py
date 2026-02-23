@@ -22,6 +22,7 @@ from .graph import build_graph, detect_patterns, reachable_from, shortest_paths
 from .indexer import run_index
 from .models import IndexConfig
 from .store import CodeStore
+from .summarize import run_summarize
 
 log = logging.getLogger(__name__)
 
@@ -93,6 +94,9 @@ def symbol_info(name: str, project: str = ".") -> str:
             lines.append(f"{sym.kind.upper()}: {sym.qualified_name}")
             lines.append(f"  location:  {sym.file_path}:{sym.start_line}–{sym.end_line}")
             lines.append(f"  signature: {sym.signature}")
+            summary = store.get_summary(sym.id)
+            if summary and summary.summary_text and not summary.is_stale:
+                lines.append(f"  summary:   {summary.summary_text}")
             if metrics:
                 lines.append(f"  pagerank: {metrics.pagerank:.4f}  betweenness: {metrics.betweenness:.4f}")
                 lines.append(f"  callers: {metrics.in_degree}  callees: {metrics.out_degree}")
@@ -377,6 +381,37 @@ def detect_patterns_tool(project: str = ".") -> str:
         return "\n".join(lines)
     finally:
         store.close()
+
+
+@mcp.tool()
+def summarize_project(project: str = ".", model: str = "haiku", force: bool = False) -> str:
+    """
+    Generate LLM summaries for all indexed symbols, files, and directories.
+    Uses Claude CLI (haiku model by default) to produce concise summaries.
+    Skips targets that already have fresh summaries unless force=True.
+
+    Args:
+        project: Path to the project root (must have been indexed first).
+        model: LLM model to use (default: haiku).
+        force: If True, re-summarize everything even if summaries exist.
+    """
+    root = str(Path(project).resolve())
+    db_path = _default_db(root)
+    stats = run_summarize(
+        project_root=root,
+        db_path=db_path,
+        model=model,
+        skip_fresh=not force,
+    )
+    return (
+        f"Summarization of {root}\n"
+        f"  symbols:     {stats.get('symbols', 0)}\n"
+        f"  files:       {stats.get('files', 0)}\n"
+        f"  directories: {stats.get('directories', 0)}\n"
+        f"  skipped:     {stats.get('skipped', 0)}\n"
+        f"  errors:      {stats.get('errors', 0)}\n"
+        f"  LLM calls:   {stats.get('llm_calls', 0)}\n"
+    )
 
 
 @mcp.tool()

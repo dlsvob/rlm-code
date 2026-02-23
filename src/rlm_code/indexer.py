@@ -94,9 +94,15 @@ def _run_index_inner(config: IndexConfig, store: CodeStore, force: bool) -> dict
                 log.debug("Deleting %s from index", path)
                 store.delete_file(path)
 
-            # Discover all files to pick up new ones, then filter to changed+added
+            # Discover all files, then figure out what needs processing
             all_files = {p: lang for p, lang in discover_files(config)}
             to_process = set(changeset.changed) | set(changeset.added)
+            # Also include newly discovered files not yet in the index
+            # (handles untracked files not visible in git diff)
+            indexed_set = set(indexed_paths)
+            for p in all_files:
+                if p not in indexed_set:
+                    to_process.add(p)
             files_to_index = [
                 (p, lang) for p, lang in all_files.items() if p in to_process
             ]

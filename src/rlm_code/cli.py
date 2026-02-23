@@ -10,6 +10,7 @@ from .graph import build_graph, detect_patterns, shortest_paths
 from .indexer import run_index
 from .models import IndexConfig
 from .store import CodeStore
+from .summarize import run_summarize
 
 log = logging.getLogger(__name__)
 
@@ -86,6 +87,9 @@ def cmd_query(args: argparse.Namespace) -> int:
             print(f"\n{sym.kind.upper()}  {sym.qualified_name}")
             print(f"  file:      {sym.file_path}:{sym.start_line}–{sym.end_line}")
             print(f"  signature: {sym.signature}")
+            summary = store.get_summary(sym.id)
+            if summary and summary.summary_text and not summary.is_stale:
+                print(f"  summary:   {summary.summary_text}")
             if metrics:
                 print(f"  pagerank:  {metrics.pagerank:.4f}  betweenness: {metrics.betweenness:.4f}")
                 print(f"  callers:   {metrics.in_degree}  callees: {metrics.out_degree}")
@@ -226,6 +230,30 @@ def cmd_patterns(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_summarize(args: argparse.Namespace) -> int:
+    root = str(Path(args.path).resolve())
+    db_path = args.db or _default_db(root)
+
+    model = args.model or "haiku"
+    force = args.force
+
+    print(f"Summarizing {root} (model={model}, force={force})", file=sys.stderr)
+    stats = run_summarize(
+        project_root=root,
+        db_path=db_path,
+        model=model,
+        skip_fresh=not force,
+    )
+
+    print(f"  symbols:     {stats.get('symbols', 0)}")
+    print(f"  files:       {stats.get('files', 0)}")
+    print(f"  directories: {stats.get('directories', 0)}")
+    print(f"  skipped:     {stats.get('skipped', 0)}")
+    print(f"  errors:      {stats.get('errors', 0)}")
+    print(f"  LLM calls:   {stats.get('llm_calls', 0)}")
+    return 0
+
+
 def cmd_serve(args: argparse.Namespace) -> int:
     from .server import run_server
     run_server(http=args.http, port=args.port)
@@ -287,6 +315,13 @@ def main() -> None:
     p.add_argument("path", nargs="?", default=".", help="Project root")
     p.add_argument("--db", help="Database path")
 
+    # summarize
+    p = sub.add_parser("summarize", help="Generate LLM summaries for indexed symbols/files")
+    p.add_argument("path", nargs="?", default=".", help="Project root")
+    p.add_argument("--db", help="Database path")
+    p.add_argument("--model", help="LLM model (default: haiku)")
+    p.add_argument("--force", action="store_true", help="Re-summarize even if fresh")
+
     # serve
     p = sub.add_parser("serve", help="Start MCP server")
     p.add_argument("--http", action="store_true", help="HTTP transport instead of stdio")
@@ -305,6 +340,7 @@ def main() -> None:
         "related": cmd_related,
         "hotspots": cmd_hotspots,
         "patterns": cmd_patterns,
+        "summarize": cmd_summarize,
         "serve": cmd_serve,
     }
 
