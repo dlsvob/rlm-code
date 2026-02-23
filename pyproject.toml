@@ -1,0 +1,28 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "rlm-code"
+version = "0.1.0"
+description = "Graph-aware code indexer for Claude — tree-sitter + call graph + MCP server"
+requires-python = ">=3.12"
+dependencies = [
+    "tree-sitter>=0.24",
+    "tree-sitter-language-pack>=0.1",
+    "networkx>=3.4",
+    "duckdb>=1.2",
+    "mcp>=1.2",
+    "pathspec>=0.12",
+]
+
+[project.optional-dependencies]
+llm = [
+    "anthropic>=0.40",
+]
+
+[project.scripts]
+rlm-code = "rlm_code.cli:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/rlm_code"]
