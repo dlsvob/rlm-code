@@ -38,18 +38,20 @@ def compute_metrics(g: nx.DiGraph) -> list[SymbolMetrics]:
 
     n = g.number_of_nodes()
 
-    # PageRank — use pure-Python implementation to avoid scipy dependency
+    # PageRank on reversed graph — so orchestrators (high out-degree in the
+    # original graph) rank highest, rather than heavily-called leaf utilities.
+    rg = g.reverse(copy=True)
     try:
-        pr = nx.pagerank_numpy(g) if n < 500 else nx.pagerank(g, max_iter=200)
+        pr = nx.pagerank_numpy(rg) if n < 500 else nx.pagerank(rg, max_iter=200)
     except Exception:
         try:
-            # fall back to pure-Python power iteration
-            pr = {node: 1.0 / n for node in g.nodes()}
+            # fall back to pure-Python power iteration on reversed graph
+            pr = {node: 1.0 / n for node in rg.nodes()}
             for _ in range(100):
                 new_pr: dict = {}
-                for node in g.nodes():
+                for node in rg.nodes():
                     in_sum = sum(
-                        pr[p] / (g.out_degree(p) or 1) for p in g.predecessors(node)
+                        pr[p] / (rg.out_degree(p) or 1) for p in rg.predecessors(node)
                     )
                     new_pr[node] = 0.15 / n + 0.85 * in_sum
                 pr = new_pr
