@@ -13,6 +13,8 @@ log = logging.getLogger(__name__)
 _EXT_TO_LANG: dict[str, str] = {
     ".py": "python",
     ".java": "java",
+    ".ts": "typescript",
+    ".tsx": "tsx",
 }
 
 

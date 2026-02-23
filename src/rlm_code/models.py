@@ -71,7 +71,7 @@ class Summary:
 class IndexConfig:
     project_root: str
     db_path: str                # path to bmdx.duckdb
-    languages: list[str] = field(default_factory=lambda: ["python", "java"])
+    languages: list[str] = field(default_factory=lambda: ["python", "java", "typescript", "tsx"])
     exclude_dirs: list[str] = field(default_factory=lambda: [
         ".git", "__pycache__", ".venv", "venv", "node_modules",
         "target", "build", "dist", ".mypy_cache", ".pytest_cache",

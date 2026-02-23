@@ -83,6 +83,23 @@ def _parse_java_import(ref_text: str) -> list[str]:
     return [simple, fqcn]
 
 
+def _parse_typescript_import(ref_text: str) -> list[str]:
+    """
+    Parse a TypeScript import ref_text in the format "name|module_specifier".
+
+    Returns candidate symbol names for resolution.
+
+    "Foo|./utils"        → ["Foo"]
+    "React|react"        → ["React"]
+    "path|path"          → ["path"]
+    """
+    if "|" not in ref_text:
+        return [ref_text] if ref_text else []
+    name, _module = ref_text.split("|", 1)
+    # The imported name is what we match against the symbol index
+    return [name] if name else []
+
+
 class Resolver:
     def __init__(self, symbols: list[Symbol]) -> None:
         # Index by simple name and by qualified name
@@ -130,6 +147,8 @@ class Resolver:
             names = _parse_python_import(ref.ref_text)
         elif language == "java":
             names = _parse_java_import(ref.ref_text)
+        elif language in ("typescript", "tsx"):
+            names = _parse_typescript_import(ref.ref_text)
         else:
             return []
 
