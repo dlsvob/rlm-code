@@ -1,0 +1,14 @@
+{
+  "mcpServers": {
+    "rlm-code": {
+      "command": "uv",
+      "args": [
+        "--directory",
+        "/home/svobodadl/AI/rlm-code",
+        "run",
+        "rlm-code",
+        "serve"
+      ]
+    }
+  }
+}
