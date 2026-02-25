@@ -37,10 +37,20 @@ const Details = (() => {
     kind.textContent = data.kind;
     c.appendChild(kind);
 
-    /* ── File location ────────────────────────────────────────── */
+    /* ── File location (clickable — opens the code viewer) ────── */
     const loc = document.createElement("div");
     loc.className = "detail-section";
-    loc.innerHTML = `<h3>Location</h3><code>${data.filePath}:${data.startLine}-${data.endLine}</code>`;
+    loc.innerHTML = `<h3>Location</h3>`;
+    const locLink = document.createElement("code");
+    locLink.className = "detail-location-link";
+    locLink.textContent = `${data.filePath}:${data.startLine}-${data.endLine}`;
+    locLink.title = "View source";
+    locLink.addEventListener("click", () => {
+      if (cb && cb.onLocationClick) {
+        cb.onLocationClick(data.filePath, data.startLine, data.endLine);
+      }
+    });
+    loc.appendChild(locLink);
     c.appendChild(loc);
 
     /* ── Signature ────────────────────────────────────────────── */

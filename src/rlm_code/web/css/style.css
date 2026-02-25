@@ -260,6 +260,108 @@ html, body {
   white-space: pre-wrap;
 }
 
+/* ── Center code panel (replaces graph when active) ───────────────── */
+
+#code-panel {
+  flex: 1 1 auto;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  background: var(--bg);
+}
+
+#code-header {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 6px 12px;
+  background: var(--bg-surface);
+  border-bottom: 1px solid var(--border);
+}
+
+#btn-back-to-graph {
+  padding: 3px 10px;
+  background: var(--bg);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  cursor: pointer;
+  font-size: 12px;
+  white-space: nowrap;
+}
+#btn-back-to-graph:hover { background: var(--bg-hover); }
+
+#code-filepath {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--text-dim);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+#code-scroll {
+  flex: 1 1 auto;
+  overflow: auto;
+}
+
+#code-table {
+  border-collapse: collapse;
+  border-spacing: 0;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  line-height: 1.5;
+  width: 100%;
+  /* Ensure the table doesn't shrink below content width */
+  min-width: max-content;
+}
+
+.code-gutter {
+  position: relative;
+  text-align: right;
+  padding: 0 12px 0 8px;
+  color: var(--text-dim);
+  user-select: none;
+  white-space: nowrap;
+  width: 1%;           /* shrink to fit content */
+  vertical-align: top;
+  border-right: 1px solid var(--border);
+}
+
+.code-line {
+  padding: 0 16px;
+  white-space: pre;    /* preserve spaces & tabs exactly */
+  vertical-align: top;
+}
+
+/* Focus highlight — the symbol's line range gets a brighter background
+   so it visually stands out from the rest of the file. */
+.code-focus .code-gutter,
+.code-focus .code-line {
+  background: var(--bg-active);
+}
+.code-focus .code-gutter {
+  color: var(--text);
+}
+
+/* Symbol markers — small colored dots in the gutter at each symbol's
+   start line.  Clicking one navigates to that symbol. */
+.code-symbol-marker {
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--accent);
+  margin-right: 4px;
+  cursor: pointer;
+  vertical-align: middle;
+}
+.code-symbol-marker:hover {
+  background: var(--text-bright);
+  box-shadow: 0 0 4px var(--accent);
+}
+
 /* ── Right sidebar (details) ───────────────────────────────────────── */
 
 #sidebar-right {
@@ -304,6 +406,18 @@ html, body {
 .detail-kind.function { background: var(--green); color: #1e1e2e; }
 .detail-kind.class    { background: var(--blue); color: #1e1e2e; }
 .detail-kind.method   { background: var(--orange); color: #1e1e2e; }
+
+/* Clickable location link in symbol details — opens the code viewer */
+.detail-location-link {
+  cursor: pointer;
+  color: var(--accent);
+  text-decoration: underline;
+  text-decoration-style: dotted;
+  text-underline-offset: 2px;
+}
+.detail-location-link:hover {
+  color: var(--text-bright);
+}
 
 .detail-section { margin-top: 12px; }
 .detail-section h3 {

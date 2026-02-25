@@ -15,7 +15,7 @@ from collections import defaultdict
 from pathlib import Path
 
 from fastapi import FastAPI, Query
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi.responses import FileResponse, JSONResponse, PlainTextResponse
 from fastapi.staticfiles import StaticFiles
 
 from .store import CodeStore
@@ -301,6 +301,39 @@ def create_app(db_path: str) -> FastAPI:
             }
             for s in results
         ]
+
+    # ── Source file endpoint ─────────────────────────────────────────────
+    # Serves raw source code from the project root.  The project root is
+    # derived from db_path's parent — same convention used throughout the
+    # CLI (the .rlm-code.duckdb file sits in the project root).
+
+    project_root = Path(db_path).resolve().parent
+
+    @app.get("/api/source/{file_path:path}")
+    def api_source(file_path: str) -> PlainTextResponse:
+        """Read a source file from the project and return its raw text.
+
+        Guards against path traversal by resolving the requested path and
+        verifying it stays within the project root.  Returns 404 for
+        missing files or paths that escape the root.
+        """
+        resolved = (project_root / file_path).resolve()
+
+        # Path traversal guard — the resolved path must be inside the
+        # project root.  ``is_relative_to`` raises no exceptions; it
+        # simply returns False for paths that escape the root.
+        if not resolved.is_relative_to(project_root):
+            return PlainTextResponse("Not found", status_code=404)
+
+        if not resolved.is_file():
+            return PlainTextResponse("Not found", status_code=404)
+
+        try:
+            text = resolved.read_text(encoding="utf-8", errors="replace")
+        except OSError:
+            return PlainTextResponse("Could not read file", status_code=500)
+
+        return PlainTextResponse(text)
 
     # ── Static file serving ───────────────────────────────────────────────
     # Serve the SPA's index.html at "/" and all other static assets

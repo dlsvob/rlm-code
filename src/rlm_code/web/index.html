@@ -47,6 +47,17 @@
       <div id="tooltip" class="hidden"></div>
     </main>
 
+    <!-- Center: Source code viewer (replaces graph when active) -->
+    <main id="code-panel" class="hidden">
+      <div id="code-header">
+        <button id="btn-back-to-graph" title="Back to graph">&larr; Graph</button>
+        <span id="code-filepath"></span>
+      </div>
+      <div id="code-scroll">
+        <table id="code-table"></table>
+      </div>
+    </main>
+
     <!-- Right sidebar: details for selected symbol/file/dir -->
     <aside id="sidebar-right" class="hidden">
       <button id="btn-close-details" title="Close">&times;</button>
@@ -60,6 +71,7 @@
   <script src="/js/tree.js"></script>
   <script src="/js/graph.js"></script>
   <script src="/js/details.js"></script>
+  <script src="/js/code.js"></script>
   <script src="/js/search.js"></script>
   <script src="/js/app.js"></script>
 

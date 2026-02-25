@@ -50,5 +50,20 @@ const API = (() => {
      * @param {string} q — search query
      */
     search: (q) => _get(`/api/search?q=${encodeURIComponent(q)}`),
+
+    /**
+     * Fetch raw source text for a file.  Returns a string (not JSON)
+     * because the endpoint returns plain text.
+     * @param {string} filePath — relative file path within the project
+     * @returns {Promise<string>} — the file's raw source text
+     */
+    source: async (filePath) => {
+      const res = await fetch(`/api/source/${encodeURIComponent(filePath)}`);
+      if (!res.ok) {
+        const body = await res.text();
+        throw new Error(`API /api/source/${filePath} → ${res.status}: ${body}`);
+      }
+      return res.text();
+    },
   };
 })();
