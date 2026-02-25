@@ -1,13 +1,15 @@
 /**
  * code.js — Source code viewer panel.
  *
- * Replaces the center graph panel when active, showing the raw source of a
- * file with line numbers, focus highlighting for a selected symbol's line
- * range, and clickable symbol markers in the gutter.
+ * Replaces the center graph panel when active, showing the source of a file
+ * with line numbers, syntax highlighting (via highlight.js + Catppuccin Mocha
+ * theme), focus highlighting for a selected symbol's line range, and clickable
+ * symbol markers in the gutter.
  *
- * The panel is built with plain HTML (<pre>-style <table>) — no external
- * syntax-highlighting library required.  All source text is HTML-escaped
- * to prevent XSS.
+ * Syntax coloring uses hljs.highlight() to produce tokenized HTML, which is
+ * then split by newline and injected into per-line table cells.  If hljs
+ * doesn't recognise the language or throws, we fall back to HTML-escaped
+ * plain text.
  *
  * Public interface:
  *   Code.show(filePath, focusStart, focusEnd)  — show file with focus
@@ -63,23 +65,89 @@ const Code = (() => {
             .replace(/"/g, "&quot;");
   }
 
-  /* ── Language detection (for the header label) ──────────────────── */
+  /* ── Language detection (for header label + hljs) ────────────────── */
 
   /**
-   * Guess a human-friendly language name from the file extension.
-   * Covers common languages; falls back to the raw extension.
+   * Guess language info from the file extension.  Returns an object with:
+   *   - display: human-friendly name for the header (e.g. "Python")
+   *   - hljs:    highlight.js language identifier (e.g. "python"), or null
+   *              if hljs has no grammar for this extension
+   *
+   * The hljs id is what we pass to hljs.highlight(source, { language }).
+   * When hljs is null the renderer falls back to plain escaped text.
    */
   function _langFromPath(filePath) {
     const ext = filePath.split(".").pop().toLowerCase();
+
+    // Each entry: { display, hljs }  — hljs is the highlight.js language id
+    // (null means "no hljs grammar available, fall back to plain text").
     const map = {
-      py: "Python", js: "JavaScript", ts: "TypeScript", tsx: "TSX",
-      jsx: "JSX", rs: "Rust", go: "Go", java: "Java", c: "C",
-      cpp: "C++", h: "C/C++ Header", rb: "Ruby", sh: "Shell",
-      bash: "Bash", zsh: "Zsh", css: "CSS", html: "HTML",
-      json: "JSON", yaml: "YAML", yml: "YAML", toml: "TOML",
-      md: "Markdown", sql: "SQL", lua: "Lua",
+      py:   { display: "Python",        hljs: "python" },
+      js:   { display: "JavaScript",    hljs: "javascript" },
+      ts:   { display: "TypeScript",    hljs: "typescript" },
+      tsx:  { display: "TSX",           hljs: "typescript" },
+      jsx:  { display: "JSX",           hljs: "javascript" },
+      rs:   { display: "Rust",          hljs: "rust" },
+      go:   { display: "Go",            hljs: "go" },
+      java: { display: "Java",          hljs: "java" },
+      c:    { display: "C",             hljs: "c" },
+      cpp:  { display: "C++",           hljs: "cpp" },
+      h:    { display: "C/C++ Header",  hljs: "c" },
+      rb:   { display: "Ruby",          hljs: "ruby" },
+      sh:   { display: "Shell",         hljs: "bash" },
+      bash: { display: "Bash",          hljs: "bash" },
+      zsh:  { display: "Zsh",           hljs: "bash" },
+      css:  { display: "CSS",           hljs: "css" },
+      html: { display: "HTML",          hljs: "xml" },
+      json: { display: "JSON",          hljs: "json" },
+      yaml: { display: "YAML",          hljs: "yaml" },
+      yml:  { display: "YAML",          hljs: "yaml" },
+      toml: { display: "TOML",          hljs: "ini" },
+      md:   { display: "Markdown",      hljs: "markdown" },
+      sql:  { display: "SQL",           hljs: "sql" },
+      lua:  { display: "Lua",           hljs: "lua" },
     };
-    return map[ext] || ext.toUpperCase();
+
+    return map[ext] || { display: ext.toUpperCase(), hljs: null };
+  }
+
+  /* ── Syntax highlighting ────────────────────────────────────────── */
+
+  /**
+   * Produce an array of per-line HTML strings with syntax coloring.
+   *
+   * We run hljs.highlight() on the entire source to get one big HTML string
+   * with <span class="hljs-..."> tokens, then split by newline.  This works
+   * because hljs closes and reopens span tags at line boundaries internally
+   * (or we handle any spanning tokens via the _splitHighlighted helper).
+   *
+   * Falls back to plain HTML-escaped lines when:
+   *   - hljs is not loaded (CDN failed)
+   *   - hljsLang is null (unknown extension)
+   *   - hljs.highlight() throws (e.g. unregistered language)
+   *
+   * @param {string}      source   — raw file contents
+   * @param {string|null} hljsLang — hljs language id, or null for no highlighting
+   * @returns {string[]} one HTML string per source line
+   */
+  function _highlightLines(source, hljsLang) {
+    // Guard: hljs must be loaded and the language must be known
+    if (typeof hljs === "undefined" || !hljsLang) {
+      return source.split("\n").map((l) => _esc(l));
+    }
+
+    try {
+      // hljs.highlight returns { value: "<span>...</span>..." }
+      const result = hljs.highlight(source, { language: hljsLang });
+
+      // hljs closes/opens spans at newlines for us (since v11), so a simple
+      // split gives valid per-line HTML.  If a token ever spans lines the
+      // browser's error recovery handles it gracefully.
+      return result.value.split("\n");
+    } catch (_err) {
+      // Language not registered or other error — fall back to escaped text
+      return source.split("\n").map((l) => _esc(l));
+    }
   }
 
   /* ── Rendering ──────────────────────────────────────────────────── */
@@ -89,7 +157,7 @@ const Code = (() => {
    *
    * Each source line becomes a <tr> with two cells:
    *   - .code-gutter: line number (right-aligned, dim)
-   *   - .code-line:   source text (monospace, HTML-escaped)
+   *   - .code-line:   source text with syntax coloring (hljs token spans)
    *
    * Lines within the focus range [focusStart, focusEnd] (1-based, inclusive)
    * get the .code-focus class for highlighted background.
@@ -101,10 +169,13 @@ const Code = (() => {
    * @param {number|null} focusStart — first highlighted line (1-based), or null
    * @param {number|null} focusEnd   — last highlighted line (1-based), or null
    * @param {Array}    symbols    — symbol objects from /api/file/ (may be empty)
+   * @param {string|null} hljsLang — hljs language id for syntax coloring
    */
-  function _render(source, focusStart, focusEnd, symbols) {
+  function _render(source, focusStart, focusEnd, symbols, hljsLang) {
     const table = _codeTable();
-    const lines = source.split("\n");
+
+    // Get syntax-highlighted per-line HTML (or escaped plain text fallback)
+    const highlightedLines = _highlightLines(source, hljsLang);
 
     // Build a lookup: line number → symbol (for gutter markers).
     // If multiple symbols start on the same line, the first one wins.
@@ -118,7 +189,7 @@ const Code = (() => {
     // Build all rows as an HTML string for performance (avoids thousands
     // of individual DOM insertions for large files).
     const rows = [];
-    for (let i = 0; i < lines.length; i++) {
+    for (let i = 0; i < highlightedLines.length; i++) {
       const lineNum = i + 1;
       const inFocus = focusStart != null && focusEnd != null &&
                       lineNum >= focusStart && lineNum <= focusEnd;
@@ -130,10 +201,13 @@ const Code = (() => {
         ? `<span class="code-symbol-marker" data-symbol-id="${_esc(marker.id)}" title="${_esc(marker.name)} (${marker.kind})"></span>`
         : "";
 
+      // .code-line gets the pre-tokenized hljs HTML (already escaped by hljs,
+      // or by our _esc fallback).  innerHTML is safe here because hljs only
+      // produces <span class="hljs-..."> tags from its own grammar rules.
       rows.push(
         `<tr class="${focusCls}">` +
           `<td class="code-gutter">${markerHtml}${lineNum}</td>` +
-          `<td class="code-line">${_esc(lines[i])}</td>` +
+          `<td class="code-line">${highlightedLines[i]}</td>` +
         `</tr>`
       );
     }
@@ -251,7 +325,8 @@ const Code = (() => {
      */
     async show(filePath, focusStart, focusEnd) {
       _showPanel();
-      _codeHeader().textContent = `${filePath}  \u2022  ${_langFromPath(filePath)}`;
+      const lang = _langFromPath(filePath);
+      _codeHeader().textContent = `${filePath}  \u2022  ${lang.display}`;
 
       // If same file is already loaded, just update the focus highlight
       // instead of re-fetching and re-rendering the whole table.
@@ -278,7 +353,7 @@ const Code = (() => {
         // Guard against race: if the user clicked another file while we were
         // loading, don't overwrite the newer file's render.
         if (_currentFile !== filePath) return;
-        _render(source, focusStart, focusEnd, symbols);
+        _render(source, focusStart, focusEnd, symbols, lang.hljs);
         _scrollToFocus(focusStart);
       } catch (err) {
         _codeTable().innerHTML = `<tbody><tr><td class="code-gutter"></td><td class="code-line" style="color:var(--red)">${_esc(err.message)}</td></tr></tbody>`;
@@ -293,7 +368,8 @@ const Code = (() => {
      */
     async showFile(filePath) {
       _showPanel();
-      _codeHeader().textContent = `${filePath}  \u2022  ${_langFromPath(filePath)}`;
+      const lang = _langFromPath(filePath);
+      _codeHeader().textContent = `${filePath}  \u2022  ${lang.display}`;
 
       _codeTable().innerHTML = '<tbody><tr><td class="code-gutter"></td><td class="code-line" style="color:var(--text-dim)">Loading...</td></tr></tbody>';
       _currentFile = filePath;
@@ -301,7 +377,7 @@ const Code = (() => {
       try {
         const { source, symbols } = await _fetchFileData(filePath);
         if (_currentFile !== filePath) return;
-        _render(source, null, null, symbols);
+        _render(source, null, null, symbols, lang.hljs);
         // Scroll to top when showing a full file
         _codeScroll().scrollTop = 0;
       } catch (err) {

@@ -278,6 +278,10 @@ html, body {
   padding: 6px 12px;
   background: var(--bg-surface);
   border-bottom: 1px solid var(--border);
+  /* Subtle shadow gives the header visual depth, separating it from the
+     scrollable code area below. */
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.25);
+  z-index: 1;   /* ensure shadow renders above the table rows */
 }
 
 #btn-back-to-graph {
@@ -318,7 +322,9 @@ html, body {
 }
 
 .code-gutter {
-  position: relative;
+  position: sticky;    /* stays visible when scrolling horizontally */
+  left: 0;
+  z-index: 1;
   text-align: right;
   padding: 0 12px 0 8px;
   color: var(--text-dim);
@@ -327,6 +333,8 @@ html, body {
   width: 1%;           /* shrink to fit content */
   vertical-align: top;
   border-right: 1px solid var(--border);
+  /* Subtle tint distinguishes the gutter from the code area */
+  background: var(--bg-surface);
 }
 
 .code-line {
@@ -335,15 +343,106 @@ html, body {
   vertical-align: top;
 }
 
-/* Focus highlight — the symbol's line range gets a brighter background
-   so it visually stands out from the rest of the file. */
+/* Zebra stripes — subtle alternating tint to help the eye track across
+   long lines.  Uses a translucent overlay so it composites over both
+   normal and focus backgrounds. */
+#code-table tbody tr:nth-child(even) .code-line {
+  background: rgba(255, 255, 255, 0.015);
+}
+#code-table tbody tr:nth-child(even) .code-gutter {
+  background: color-mix(in srgb, var(--bg-surface) 95%, white);
+}
+
+/* Row hover — light highlight so the user can see which line the
+   cursor is on.  Applies to both gutter and code cells. */
+#code-table tbody tr:hover .code-line {
+  background: var(--bg-hover);
+}
+#code-table tbody tr:hover .code-gutter {
+  background: var(--bg-hover);
+}
+
+/* Focus band — the symbol's line range gets a warm tinted background
+   plus a left accent border so it visually "pops" from the rest.  The
+   border is on the gutter cell (leftmost visible column). */
 .code-focus .code-gutter,
 .code-focus .code-line {
-  background: var(--bg-active);
+  background: rgba(137, 180, 250, 0.07);  /* accent-tinted wash */
 }
 .code-focus .code-gutter {
   color: var(--text);
+  /* Left accent stripe — 3px solid accent drawn over the gutter's
+     left edge via box-shadow (avoids shifting layout with a real border) */
+  box-shadow: inset 3px 0 0 var(--accent);
 }
+
+/* hljs integration — the Catppuccin theme targets .hljs containers, but
+   we render code inside a table layout (<td class="code-line">) instead
+   of the traditional <pre><code class="hljs">.  These rules ensure that
+   hljs token spans (.hljs-keyword, .hljs-string, etc.) inherit their
+   colors correctly inside our table cells. */
+.code-line .hljs-keyword,
+.code-line .hljs-selector-tag,
+.code-line .hljs-built_in,
+.code-line .hljs-name,
+.code-line .hljs-tag { color: var(--mauve); }
+
+.code-line .hljs-string,
+.code-line .hljs-title.class_.inherited__,
+.code-line .hljs-template-variable,
+.code-line .hljs-template-tag { color: var(--green); }
+
+.code-line .hljs-comment,
+.code-line .hljs-quote { color: var(--text-dim); font-style: italic; }
+
+.code-line .hljs-number,
+.code-line .hljs-literal { color: var(--orange); }
+
+.code-line .hljs-type,
+.code-line .hljs-title.class_ { color: var(--yellow); }
+
+.code-line .hljs-title.function_ { color: var(--blue); }
+
+.code-line .hljs-params { color: var(--text); }
+
+.code-line .hljs-attr,
+.code-line .hljs-attribute { color: var(--yellow); }
+
+.code-line .hljs-symbol,
+.code-line .hljs-bullet { color: var(--orange); }
+
+.code-line .hljs-variable,
+.code-line .hljs-variable.constant_ { color: var(--red); }
+
+.code-line .hljs-meta,
+.code-line .hljs-meta .hljs-keyword { color: var(--orange); }
+
+.code-line .hljs-selector-class { color: var(--yellow); }
+
+.code-line .hljs-selector-id { color: var(--blue); }
+
+.code-line .hljs-regexp { color: var(--orange); }
+
+.code-line .hljs-addition { color: var(--green); }
+
+.code-line .hljs-deletion { color: var(--red); }
+
+.code-line .hljs-section { color: var(--blue); font-weight: bold; }
+
+.code-line .hljs-emphasis { font-style: italic; }
+
+.code-line .hljs-strong { font-weight: bold; }
+
+/* operator, punctuation — keep subtle so they don't compete with
+   keywords and identifiers */
+.code-line .hljs-punctuation,
+.code-line .hljs-operator { color: #89dceb; }
+
+/* decorator / annotation — Python @decorators, Java @annotations */
+.code-line .hljs-meta .hljs-string { color: var(--green); }
+
+/* self / this keyword — slightly different from regular keywords */
+.code-line .hljs-variable.language_ { color: var(--red); }
 
 /* Symbol markers — small colored dots in the gutter at each symbol's
    start line.  Clicking one navigates to that symbol. */
