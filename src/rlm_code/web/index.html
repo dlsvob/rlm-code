@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>rlm-code viz</title>
+
+  <!-- D3.js from CDN — force layout, zoom, drag -->
+  <script src="https://d3js.org/d3.v7.min.js"></script>
+
+  <!-- App styles -->
+  <link rel="stylesheet" href="/css/style.css">
+</head>
+<body>
+
+  <!-- ─── Top bar: search + overview stats ────────────────────────────── -->
+  <header id="topbar">
+    <div id="topbar-left">
+      <span class="logo">rlm-code</span>
+    </div>
+    <div id="topbar-center">
+      <div id="search-container">
+        <input type="text" id="search-input" placeholder="Search symbols..." autocomplete="off">
+        <ul id="search-results" class="hidden"></ul>
+      </div>
+    </div>
+    <div id="topbar-right">
+      <span id="overview-stats"></span>
+    </div>
+  </header>
+
+  <!-- ─── Three-panel layout ──────────────────────────────────────────── -->
+  <div id="panels">
+
+    <!-- Left sidebar: directory/symbol tree -->
+    <aside id="sidebar-left">
+      <div id="tree-container"></div>
+    </aside>
+
+    <!-- Center: D3 force graph -->
+    <main id="graph-panel">
+      <div id="graph-controls">
+        <button id="btn-reset-graph" class="hidden" title="Reset to full graph">Reset view</button>
+        <span id="graph-status"></span>
+      </div>
+      <svg id="graph-svg"></svg>
+      <div id="tooltip" class="hidden"></div>
+    </main>
+
+    <!-- Right sidebar: details for selected symbol/file/dir -->
+    <aside id="sidebar-right" class="hidden">
+      <button id="btn-close-details" title="Close">&times;</button>
+      <div id="details-content"></div>
+    </aside>
+
+  </div>
+
+  <!-- ─── App scripts (order matters: api first, then modules, then app) -->
+  <script src="/js/api.js"></script>
+  <script src="/js/tree.js"></script>
+  <script src="/js/graph.js"></script>
+  <script src="/js/details.js"></script>
+  <script src="/js/search.js"></script>
+  <script src="/js/app.js"></script>
+
+</body>
+</html>

@@ -260,6 +260,22 @@ def cmd_serve(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_viz(args: argparse.Namespace) -> int:
+    """Launch the interactive visualization web app for an indexed project."""
+    root = str(Path(args.path).resolve())
+    db_path = args.db or _default_db(root)
+
+    # Verify the database exists before trying to serve
+    if not Path(db_path).exists():
+        print(f"No index found at {db_path}", file=sys.stderr)
+        print("Run 'rlm-code index' first to index the project.", file=sys.stderr)
+        return 1
+
+    from .viz_server import run_viz_server
+    run_viz_server(db_path=db_path, port=args.port, open_browser=not args.no_open)
+    return 0
+
+
 def main() -> None:
     logging.basicConfig(
         level=logging.WARNING,
@@ -327,6 +343,13 @@ def main() -> None:
     p.add_argument("--http", action="store_true", help="HTTP transport instead of stdio")
     p.add_argument("--port", type=int, default=8000, help="HTTP port (default: 8000)")
 
+    # viz — interactive web visualization
+    p = sub.add_parser("viz", help="Launch interactive visualization web app")
+    p.add_argument("path", nargs="?", default=".", help="Project root (default: .)")
+    p.add_argument("--db", help="Database path (default: <project>/.rlm-code.duckdb)")
+    p.add_argument("--port", type=int, default=8420, help="HTTP port (default: 8420)")
+    p.add_argument("--no-open", action="store_true", help="Don't auto-open browser")
+
     args = parser.parse_args()
 
     if args.verbose:
@@ -342,6 +365,7 @@ def main() -> None:
         "patterns": cmd_patterns,
         "summarize": cmd_summarize,
         "serve": cmd_serve,
+        "viz": cmd_viz,
     }
 
     sys.exit(handlers[args.command](args))

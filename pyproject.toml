@@ -21,6 +21,10 @@ dependencies = [
 llm = [
     "anthropic>=0.40",
 ]
+viz = [
+    "fastapi>=0.115",
+    "uvicorn[standard]>=0.34",
+]
 
 [project.scripts]
 rlm-code = "rlm_code.cli:main"

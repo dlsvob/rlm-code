@@ -320,6 +320,54 @@ class CodeStore:
             "UPDATE summaries SET is_stale = true WHERE target_id = ?", [target_id]
         )
 
+    # ── bulk queries (used by viz API for efficient full-dataset loads) ────
+
+    def all_symbols(self) -> list[Symbol]:
+        """Return every symbol in one query — used by the viz server to build
+        the full graph and tree without N+1 queries per file."""
+        rows = self._con.execute(
+            "SELECT id, file_path, name, qualified_name, kind, "
+            "start_line, end_line, signature FROM symbols"
+        ).fetchall()
+        return [Symbol(*r) for r in rows]
+
+    def all_metrics(self) -> list[SymbolMetrics]:
+        """Return every metrics row at once — avoids per-symbol lookups
+        when building the graph node list."""
+        rows = self._con.execute(
+            "SELECT symbol_id, in_degree, out_degree, betweenness, pagerank "
+            "FROM metrics"
+        ).fetchall()
+        return [SymbolMetrics(*r) for r in rows]
+
+    def all_summaries(self) -> list[Summary]:
+        """Return all summaries (symbols, files, directories) in one query."""
+        rows = self._con.execute(
+            "SELECT target_id, target_kind, summary_text, model, "
+            "generated_at, is_stale FROM summaries"
+        ).fetchall()
+        return [Summary(*r) for r in rows]
+
+    def all_files(self) -> list[FileRecord]:
+        """Return every file record — used for tree building and file detail views."""
+        rows = self._con.execute(
+            "SELECT path, language, content_hash, line_count, last_indexed FROM files"
+        ).fetchall()
+        return [FileRecord(*r) for r in rows]
+
+    def search_symbols(self, query: str, limit: int = 20) -> list[Symbol]:
+        """Case-insensitive search on symbol name and qualified_name.
+        Used by the search endpoint for typeahead results."""
+        pattern = f"%{query}%"
+        rows = self._con.execute(
+            "SELECT id, file_path, name, qualified_name, kind, "
+            "start_line, end_line, signature FROM symbols "
+            "WHERE name ILIKE ? OR qualified_name ILIKE ? "
+            "LIMIT ?",
+            [pattern, pattern, limit],
+        ).fetchall()
+        return [Symbol(*r) for r in rows]
+
     # ── stats ────────────────────────────────────────────────────────────────
 
     def stats(self) -> dict:
