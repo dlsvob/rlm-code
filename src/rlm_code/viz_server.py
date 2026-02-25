@@ -317,9 +317,66 @@ def create_app(db_path: str) -> FastAPI:
     return app
 
 
+def start_viz_in_thread(db_path: str, port: int = 8420, open_browser: bool = True) -> bool:
+    """Start the viz server in a daemon thread.
+
+    Creates the FastAPI app via ``create_app`` and runs uvicorn inside a
+    daemon thread so it dies automatically when the parent process exits.
+    This is the shared implementation used by both the CLI entry point
+    (``run_viz_server``) and the MCP auto-start path in ``server.py``.
+
+    Args:
+        db_path:      Path to the ``.rlm-code.duckdb`` database file.
+        port:         TCP port to listen on (default 8420).
+        open_browser: If True, opens a browser tab after a 1-second delay.
+
+    Returns:
+        True if the server was started successfully, False if the port was
+        already in use (``OSError`` / ``EADDRINUSE``).
+    """
+    import socket
+    import uvicorn
+
+    # Pre-check: try to bind the port before creating the app and thread.
+    # This avoids a race where uvicorn silently fails inside the daemon thread
+    # and the caller never knows the port was taken.
+    try:
+        probe = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        probe.bind(("127.0.0.1", port))
+        probe.close()
+    except OSError:
+        # Port already in use — another viz instance (or something else)
+        return False
+
+    app = create_app(db_path)
+    url = f"http://localhost:{port}"
+
+    def _run_uvicorn() -> None:
+        """Target for the daemon thread — blocks on uvicorn.run()."""
+        uvicorn.run(app, host="127.0.0.1", port=port, log_level="warning")
+
+    thread = threading.Thread(target=_run_uvicorn, daemon=True)
+    thread.start()
+
+    if open_browser:
+        # Open browser after a brief delay so uvicorn has time to start
+        threading.Timer(1.0, webbrowser.open, args=[url]).start()
+
+    return True
+
+
 def run_viz_server(db_path: str, port: int = 8420, open_browser: bool = True) -> None:
-    """Create the app and start uvicorn.  Optionally opens a browser tab
-    after a short delay so the server has time to bind the port."""
+    """CLI entry point — start the viz server and block until interrupted.
+
+    Delegates the actual server startup to ``start_viz_in_thread``.  If the
+    port is already in use, prints an error and exits.  Otherwise blocks the
+    main thread (via ``thread.join()``) so the CLI stays alive.
+
+    Args:
+        db_path:      Path to the ``.rlm-code.duckdb`` database file.
+        port:         TCP port to listen on (default 8420).
+        open_browser: If True, opens a browser tab after a short delay.
+    """
     import uvicorn
 
     app = create_app(db_path)
@@ -330,4 +387,7 @@ def run_viz_server(db_path: str, port: int = 8420, open_browser: bool = True) ->
         # Open browser after a brief delay so uvicorn has time to start
         threading.Timer(1.0, webbrowser.open, args=[url]).start()
 
+    # Block the main thread — this keeps the CLI process alive until Ctrl-C.
+    # We use uvicorn.run() directly here (instead of start_viz_in_thread)
+    # because the CLI wants blocking behavior.
     uvicorn.run(app, host="127.0.0.1", port=port, log_level="warning")

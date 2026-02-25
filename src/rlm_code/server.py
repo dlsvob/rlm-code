@@ -137,6 +137,54 @@ mcp = FastMCP(
 )
 
 
+# ---------------------------------------------------------------------------
+# Auto-start the viz web app when the MCP server launches
+# ---------------------------------------------------------------------------
+
+def _start_viz_background() -> None:
+    """Attempt to start the viz server in a background daemon thread.
+
+    Called at module load time so the visualization is available alongside
+    the MCP session without requiring a separate ``rlm-code viz`` command.
+
+    Guards:
+    - Skips silently if ``.rlm-code.duckdb`` doesn't exist in cwd (no index yet).
+    - Skips silently if the ``[viz]`` extras aren't installed (fastapi / uvicorn
+      missing) — the import is wrapped in try/except ImportError.
+    - Skips with a log message if the port is already in use (another viz
+      instance from a prior session, for example).
+
+    All output goes to stderr (required by stdio MCP transport — stdout is
+    reserved for the JSON-RPC protocol).
+    """
+    db_path = Path.cwd() / ".rlm-code.duckdb"
+    if not db_path.exists():
+        return
+
+    try:
+        from .viz_server import start_viz_in_thread
+    except ImportError:
+        # viz extras (fastapi, uvicorn) not installed — that's fine
+        log.debug("viz extras not installed, skipping auto-start")
+        return
+
+    port = 8420
+    try:
+        started = start_viz_in_thread(str(db_path), port=port, open_browser=False)
+    except Exception as exc:
+        # Never let the viz auto-start crash the MCP server
+        log.warning("viz auto-start failed: %s", exc)
+        return
+
+    if started:
+        print(f"rlm-code viz → http://localhost:{port}", file=sys.stderr)
+    else:
+        print(f"rlm-code viz already running on port {port}", file=sys.stderr)
+
+
+_start_viz_background()
+
+
 def _default_db(project_root: str) -> str:
     return str(Path(project_root).resolve() / ".rlm-code.duckdb")
 
