@@ -7,6 +7,7 @@ IMPORTANT: Uses stdio transport. Never print to stdout — all logging goes to s
 import json
 import logging
 import sys
+import time
 from pathlib import Path
 
 # All logging must go to stderr in stdio MCP mode
@@ -15,6 +16,16 @@ logging.basicConfig(
     format="%(levelname)s %(name)s: %(message)s",
     stream=sys.stderr,
 )
+
+# File-based request log — tail -f this to watch MCP tool usage in real time
+_LOG_PATH = Path.home() / ".local" / "log" / "rlm-code-mcp.log"
+_LOG_PATH.parent.mkdir(parents=True, exist_ok=True)
+_request_log = logging.getLogger("rlm_code.requests")
+_request_log.setLevel(logging.INFO)
+_request_log.propagate = False  # don't send to stderr
+_file_handler = logging.FileHandler(_LOG_PATH)
+_file_handler.setFormatter(logging.Formatter("%(asctime)s  %(message)s", datefmt="%Y-%m-%d %H:%M:%S"))
+_request_log.addHandler(_file_handler)
 
 from mcp.server.fastmcp import FastMCP
 
@@ -26,13 +37,103 @@ from .summarize import run_summarize
 
 log = logging.getLogger(__name__)
 
+
+def _log_tool(fn):
+    """Decorator that logs every MCP tool invocation with args and duration."""
+    import functools
+    import inspect
+
+    @functools.wraps(fn)
+    def wrapper(*args, **kwargs):
+        sig = inspect.signature(fn)
+        bound = sig.bind(*args, **kwargs)
+        bound.apply_defaults()
+        params = ", ".join(f"{k}={v!r}" for k, v in bound.arguments.items())
+        _request_log.info("→ %s(%s)", fn.__name__, params)
+        t0 = time.monotonic()
+        try:
+            result = fn(*args, **kwargs)
+            dt = time.monotonic() - t0
+            # Log first line of result as a preview
+            preview = result.split("\n", 1)[0] if isinstance(result, str) else str(result)[:120]
+            _request_log.info("← %s  %.3fs  %s", fn.__name__, dt, preview)
+            return result
+        except Exception as exc:
+            dt = time.monotonic() - t0
+            _request_log.info("✗ %s  %.3fs  %s: %s", fn.__name__, dt, type(exc).__name__, exc)
+            raise
+
+    return wrapper
+
+
+def _build_instructions() -> str:
+    """Generate instructions based on the index state of the current working directory."""
+    cwd = Path.cwd().resolve()
+    db_path = cwd / ".rlm-code.duckdb"
+
+    base = (
+        "rlm-code provides graph-aware code navigation: symbol lookup, "
+        "call graph tracing, architectural pattern detection, and LLM summaries."
+    )
+
+    if not db_path.exists():
+        return (
+            f"{base}\n\n"
+            f"This project ({cwd.name}/) has NOT been indexed yet. "
+            f"Run index_project first to build the call graph before using "
+            f"symbol_info, trace_flow, find_related, or hot_paths. "
+            f"Indexing is fast and recommended for any non-trivial codebase."
+        )
+
+    try:
+        store = CodeStore(str(db_path))
+        stats = store.stats()
+        commit = store.get_meta("last_indexed_commit") or "(unknown)"
+        store.close()
+
+        n_files = stats.get("files", 0)
+        n_symbols = stats.get("symbols", 0)
+        n_summaries = stats.get("summaries", 0)
+
+        if n_symbols == 0:
+            return (
+                f"{base}\n\n"
+                f"This project ({cwd.name}/) has a database but no symbols. "
+                f"Run index_project to populate it."
+            )
+
+        parts = [
+            f"{base}\n",
+            f"This project ({cwd.name}/) is indexed: "
+            f"{n_files} files, {n_symbols} symbols, commit {commit[:8]}.",
+        ]
+        if n_summaries == 0:
+            parts.append(
+                "No LLM summaries yet — run summarize_project to generate them "
+                "for richer symbol_info results."
+            )
+        elif n_summaries < n_symbols:
+            parts.append(
+                f"{n_summaries}/{n_symbols} symbols have LLM summaries. "
+                f"Run summarize_project to fill in the rest."
+            )
+        parts.append(
+            "Use symbol_info, trace_flow, find_related, hot_paths, and "
+            "detect_patterns_tool for structural code navigation."
+        )
+        return "\n".join(parts)
+    except Exception as exc:
+        log.warning("Failed to read index for instructions: %s", exc)
+        return (
+            f"{base}\n\n"
+            f"Use index_project first, then query symbols, trace flows, "
+            f"and detect architectural patterns."
+        )
+
+
 mcp = FastMCP(
     "rlm-code",
-    instructions=(
-        "Graph-aware code navigation for large codebases. "
-        "Use index_project first, then query symbols, trace flows, "
-        "and detect architectural patterns."
-    ),
+    instructions=_build_instructions(),
 )
 
 
@@ -48,6 +149,7 @@ def _open_store(project: str) -> CodeStore:
 # ── Tools ────────────────────────────────────────────────────────────────────
 
 @mcp.tool()
+@_log_tool
 def index_project(path: str = ".", force: bool = False) -> str:
     """
     Index or re-index a project directory. Builds the call/dependency graph.
@@ -71,6 +173,7 @@ def index_project(path: str = ".", force: bool = False) -> str:
 
 
 @mcp.tool()
+@_log_tool
 def symbol_info(name: str, project: str = ".") -> str:
     """
     Look up a symbol by name. Returns definition location, signature,
@@ -119,6 +222,7 @@ def symbol_info(name: str, project: str = ".") -> str:
 
 
 @mcp.tool()
+@_log_tool
 def trace_flow(from_symbol: str, to_symbol: str, project: str = ".") -> str:
     """
     Find execution paths between two symbols in the call graph.
@@ -169,6 +273,7 @@ def trace_flow(from_symbol: str, to_symbol: str, project: str = ".") -> str:
 
 
 @mcp.tool()
+@_log_tool
 def find_related(symbol: str, project: str = ".") -> str:
     """
     Find symbols related to the given symbol by graph proximity:
@@ -226,6 +331,7 @@ def find_related(symbol: str, project: str = ".") -> str:
 
 
 @mcp.tool()
+@_log_tool
 def hot_paths(entry_point: str, project: str = ".") -> str:
     """
     Find the most important symbols reachable from an entry point,
@@ -273,6 +379,7 @@ def hot_paths(entry_point: str, project: str = ".") -> str:
 
 
 @mcp.tool()
+@_log_tool
 def module_summary(path: str, project: str = ".") -> str:
     """
     Get a structural summary of a file or directory:
@@ -335,6 +442,7 @@ def module_summary(path: str, project: str = ".") -> str:
 
 
 @mcp.tool()
+@_log_tool
 def detect_patterns_tool(project: str = ".") -> str:
     """
     Detect architectural patterns in the codebase:
@@ -384,6 +492,7 @@ def detect_patterns_tool(project: str = ".") -> str:
 
 
 @mcp.tool()
+@_log_tool
 def summarize_project(project: str = ".", model: str = "haiku", force: bool = False) -> str:
     """
     Generate LLM summaries for all indexed symbols, files, and directories.
@@ -415,6 +524,7 @@ def summarize_project(project: str = ".", model: str = "haiku", force: bool = Fa
 
 
 @mcp.tool()
+@_log_tool
 def project_overview(project: str = ".") -> str:
     """
     High-level overview of an indexed project: file count, language breakdown,
