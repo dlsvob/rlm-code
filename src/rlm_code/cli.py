@@ -10,7 +10,7 @@ from .graph import build_graph, detect_patterns, shortest_paths
 from .indexer import run_index
 from .models import IndexConfig
 from .store import CodeStore
-from .summarize import run_summarize
+from .summarize import DEFAULT_MODEL, run_summarize
 
 log = logging.getLogger(__name__)
 
@@ -234,7 +234,7 @@ def cmd_summarize(args: argparse.Namespace) -> int:
     root = str(Path(args.path).resolve())
     db_path = args.db or _default_db(root)
 
-    model = args.model or "haiku"
+    model = args.model or DEFAULT_MODEL
     force = args.force
 
     print(f"Summarizing {root} (model={model}, force={force})", file=sys.stderr)
@@ -335,7 +335,7 @@ def main() -> None:
     p = sub.add_parser("summarize", help="Generate LLM summaries for indexed symbols/files")
     p.add_argument("path", nargs="?", default=".", help="Project root")
     p.add_argument("--db", help="Database path")
-    p.add_argument("--model", help="LLM model (default: haiku)")
+    p.add_argument("--model", help="LLM model (default: claude-haiku-4.5)")
     p.add_argument("--force", action="store_true", help="Re-summarize even if fresh")
 
     # serve

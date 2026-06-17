@@ -9,6 +9,7 @@ import json
 import logging
 import os
 import subprocess
+import time
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -17,8 +18,39 @@ from .store import CodeStore
 
 log = logging.getLogger(__name__)
 
-DEFAULT_MODEL = "haiku"
+DEFAULT_MODEL = "claude-haiku-4.5"
 MAX_FILE_CHARS = 100_000  # skip files larger than this
+MAX_RETRIES = 4  # attempts per LLM call before giving up
+RETRY_BASE_DELAY = 2.0  # seconds; doubled each retry (2, 4, 8, ...)
+
+
+def _extract_json_object(text: str) -> str | None:
+    """Return the first balanced ``{...}`` object in text, ignoring braces
+    inside string literals. Returns None if no complete object is found."""
+    start = text.find("{")
+    if start == -1:
+        return None
+    depth = 0
+    in_str = False
+    escape = False
+    for i in range(start, len(text)):
+        ch = text[i]
+        if in_str:
+            if escape:
+                escape = False
+            elif ch == "\\":
+                escape = True
+            elif ch == '"':
+                in_str = False
+        elif ch == '"':
+            in_str = True
+        elif ch == "{":
+            depth += 1
+        elif ch == "}":
+            depth -= 1
+            if depth == 0:
+                return text[start : i + 1]
+    return None
 
 
 class Summarizer:
@@ -34,15 +66,42 @@ class Summarizer:
         self._call_count = 0
 
     def _call_claude(self, prompt: str) -> str | None:
-        """Call claude CLI in print mode. Returns response text or None on failure."""
+        """Call the claude CLI, retrying transient failures with exponential
+        backoff. Returns response text, or None once retries are exhausted."""
+        delay = RETRY_BASE_DELAY
+        for attempt in range(1, MAX_RETRIES + 1):
+            try:
+                text = self._call_claude_once(prompt)
+            except FileNotFoundError:
+                # claude binary missing — retrying won't help.
+                log.error("claude CLI not found — install Claude Code first")
+                return None
+
+            if text is not None:
+                return text
+
+            if attempt < MAX_RETRIES:
+                log.warning(
+                    "claude call failed (attempt %d/%d), retrying in %.0fs",
+                    attempt, MAX_RETRIES, delay,
+                )
+                time.sleep(delay)
+                delay *= 2
+
+        log.warning("claude call failed after %d attempts; giving up", MAX_RETRIES)
+        return None
+
+    def _call_claude_once(self, prompt: str) -> str | None:
+        """One claude CLI invocation. Returns text on success, None on a
+        transient failure (caller may retry). Raises FileNotFoundError when
+        the binary is missing, which is not retryable."""
+        # Clean env: unset CLAUDECODE to allow nested invocation
+        env = {k: v for k, v in os.environ.items() if not k.startswith("CLAUDE")}
         try:
-            # Clean env: unset CLAUDECODE to allow nested invocation
-            env = {k: v for k, v in os.environ.items() if not k.startswith("CLAUDE")}
             result = subprocess.run(
                 [
                     "claude", "-p",
                     "--model", self.model,
-                    "--tools", "",
                     "--output-format", "json",
                     "--no-session-persistence",
                 ],
@@ -52,31 +111,29 @@ class Summarizer:
                 timeout=120,
                 env=env,
             )
-            if result.returncode != 0:
-                log.warning(
-                    "claude CLI failed (rc=%d): %s",
-                    result.returncode, result.stderr[:200],
-                )
-                return None
-
-            envelope = json.loads(result.stdout)
-            self._call_count += 1
-
-            if envelope.get("is_error"):
-                log.warning("claude returned error: %s", envelope.get("result", "")[:200])
-                return None
-
-            return envelope.get("result", "")
-
-        except FileNotFoundError:
-            log.error("claude CLI not found — install Claude Code first")
-            return None
         except subprocess.TimeoutExpired:
             log.warning("claude CLI timed out")
             return None
+
+        if result.returncode != 0:
+            log.warning(
+                "claude CLI failed (rc=%d): %s",
+                result.returncode, result.stderr[:200],
+            )
+            return None
+
+        try:
+            envelope = json.loads(result.stdout)
         except (json.JSONDecodeError, KeyError) as e:
             log.warning("Failed to parse claude response: %s", e)
             return None
+
+        if envelope.get("is_error"):
+            log.warning("claude returned error: %s", envelope.get("result", "")[:200])
+            return None
+
+        self._call_count += 1
+        return envelope.get("result", "")
 
     def _read_file(self, rel_path: str) -> str | None:
         """Read a source file from the project."""
@@ -141,6 +198,9 @@ class Summarizer:
             # Strip markdown fences if present
             if text.startswith("```"):
                 text = text.split("\n", 1)[1].rsplit("```", 1)[0].strip()
+            # Models sometimes wrap the JSON in prose; extract the first
+            # balanced {...} object before parsing.
+            text = _extract_json_object(text) or text
             data = json.loads(text)
 
             # File summary
