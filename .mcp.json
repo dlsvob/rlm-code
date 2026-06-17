@@ -4,7 +4,7 @@
       "command": "uv",
       "args": [
         "--directory",
-        "/home/svobodadl/AI/rlm-code",
+        "/ddn/gs1/home/svobodadl/Dev/Projects/rlm-code",
         "run",
         "rlm-code",
         "serve"
